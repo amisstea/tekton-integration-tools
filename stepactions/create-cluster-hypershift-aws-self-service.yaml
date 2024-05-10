@@ -1,0 +1,75 @@
+apiVersion: tekton.dev/v1alpha1
+kind: StepAction
+metadata:
+  name: create-cluster-hypershift-aws-self-service
+spec:
+  image: registry.redhat.io/openshift4/ose-cli@sha256:15da03b04318bcc842060b71e9dd6d6c2595edb4e8fdd11b0c6781eeb03ca182
+  params:
+    - name: instanceType
+      type: string
+      description: AWS EC2 instance type for worker nodes.
+    - name: version
+      type: string
+      description: The version of OpenShift to install.
+    - name: baseDomain
+      type: string
+      description: The base domain of the cluster. This must already be registered in AWS Route53.
+    - name: region
+      type: string
+      default: us-east-1
+      description: The AWS region where infra/iam and worker nodes will be deployed.
+    - name: secret
+      type: string
+      default: hypershift
+      description: The name of a secret used by the hypershift CLI to provision the cluster.
+  results:
+    - name: clusterName
+      description: The name of the generated ClusterTemplateInstance resource 
+  env:
+    - name: INSTANCE_TYPE
+      value: "$(params.instanceType)"
+    - name: VERSION
+      value: "$(params.version)"
+    - name: BASE_DOMAIN
+      value: "$(params.baseDomain)"
+    - name: REGION
+      value: "$(params.region)"
+    - name: SECRET
+      value: "$(params.secret)"
+  script: |
+    #!/bin/bash
+    set -eo pipefail
+
+    cat <<EOF > cti.yaml
+    apiVersion: clustertemplate.openshift.io/v1alpha1
+    kind: ClusterTemplateInstance
+    metadata:
+      generateName: cluster-
+    spec:
+      clusterTemplateRef: hypershift-aws-self-service-template
+      parameters:
+        - name: baseDomain
+          value: $BASE_DOMAIN
+        - name: region
+          value: $REGION
+        - name: secret
+          value: $SECRET
+        - name: instanceType
+          value: $INSTANCE_TYPE
+        - name: version
+          value: $VERSION
+    EOF
+
+    CTI_NAME=$(oc create -f cti.yaml -o=jsonpath='{.metadata.name}')
+    echo "Created ClusterTemplateInstance $CTI_NAME"
+    echo -n $CTI_NAME > $(step.results.clusterName.path)
+
+    echo "Waiting for ClusterTemplateInstance to be ready (20m timeout)"
+    if oc wait cti $CTI_NAME --for=jsonpath='{.status.phase}'=Ready --timeout=20m; then
+      echo "Successfully provisioned $CTI_NAME"
+      exit 0
+    else
+      oc get cti $CTI_NAME -o yaml
+      echo "Failed to provision $CTI_NAME"
+      exit 1
+    fi

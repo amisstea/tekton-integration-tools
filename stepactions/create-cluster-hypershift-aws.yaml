@@ -1,0 +1,52 @@
+apiVersion: tekton.dev/v1alpha1
+kind: StepAction
+metadata:
+  name: create-cluster-hypershift-aws
+spec:
+  image: registry.redhat.io/openshift4/ose-cli@sha256:15da03b04318bcc842060b71e9dd6d6c2595edb4e8fdd11b0c6781eeb03ca182
+  params:
+    - name: instanceType
+      type: string
+      description: AWS EC2 instance type for worker nodes.
+    - name: version
+      type: string
+      description: The version of OpenShift to install.
+  results:
+    - name: clusterName
+      description: The name of the generated ClusterTemplateInstance resource 
+  env:
+    - name: INSTANCE_TYPE
+      value: "$(params.instanceType)"
+    - name: VERSION
+      value: "$(params.version)"
+  script: |
+    #!/bin/bash
+    set -eo pipefail
+
+    cat <<EOF > cti.yaml
+    apiVersion: clustertemplate.openshift.io/v1alpha1
+    kind: ClusterTemplateInstance
+    metadata:
+      generateName: cluster-
+    spec:
+      clusterTemplateRef: hypershift-aws-template
+      parameters:
+        - name: instanceType
+          value: $INSTANCE_TYPE
+        - name: version
+          value: $VERSION
+    EOF
+
+    CTI_NAME=$(oc create -f cti.yaml -o=jsonpath='{.metadata.name}')
+    echo "Created ClusterTemplateInstance $CTI_NAME"
+    echo -n $CTI_NAME > $(step.results.clusterName.path)
+
+    echo "Waiting for ClusterTemplateInstance to be ready (20m timeout)"
+    if oc wait cti $CTI_NAME --for=jsonpath='{.status.phase}'=Ready --timeout=20m; then
+      echo "Successfully provisioned $CTI_NAME"
+      exit 0
+    else
+      oc get cti $CTI_NAME -o yaml
+      echo "Failed to provision $CTI_NAME"
+      exit 1
+    fi

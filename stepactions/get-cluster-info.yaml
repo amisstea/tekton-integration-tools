@@ -1,0 +1,35 @@
+apiVersion: tekton.dev/v1alpha1
+kind: StepAction
+metadata:
+  name: get-cluster-info
+spec:
+  image: registry.redhat.io/openshift4/ose-cli@sha256:15da03b04318bcc842060b71e9dd6d6c2595edb4e8fdd11b0c6781eeb03ca182
+  params:
+    - name: clusterName
+      type: string
+    - name: credentialsVolume
+      type: string
+  results:
+    - name: kubeconfig
+      description: Relative path to the kubeconfig in the mounted volume
+  env:
+    - name: CLUSTER_NAME
+      value: "$(params.clusterName)"
+    - name: KUBECONFIG
+      value: "$(params.clusterName)-kubeconfig"
+  volumeMounts:
+    - name: "$(params.credentialsVolume)"
+      mountPath: /credentials
+  script: |
+    #!/bin/bash
+    set -eo pipefail
+    
+    SECRET=$(oc get cti $CLUSTER_NAME -o=jsonpath='{.status.kubeconfig.name}')
+    echo "Found kubeconfig secret: $SECRET"
+    oc get secret \
+      -n tenant-space $SECRET \
+      -o go-template \
+      --template="{{.data.kubeconfig|base64decode}}" \
+      > /credentials/$KUBECONFIG
+    echo "Wrote kubeconfig to /credentials/$KUBECONFIG"
+    echo -n $KUBECONFIG > $(step.results.kubeconfig.path)

@@ -1,0 +1,18 @@
+apiVersion: tekton.dev/v1alpha1
+kind: StepAction
+metadata:
+  name: get-hypershift-supported-versions
+spec:
+  image: quay.io/redhat-appstudio/appstudio-utils@sha256:586149e3f18d966f681d956ab074b4e1d8433663d615ed86e19a3804ba952dfe
+  results:
+    - name: versions
+      type: array
+      description: List of supported minor versions from newest to oldest. E.g. ["4.15","4.14","4.13"]
+  script: |
+    #!/bin/bash
+    set -eo pipefail
+
+    SV=$(oc get configmap supported-versions -n hypershift -o=jsonpath='{.data.supported-versions}')
+    VERSIONS=$(echo "$SV" | jq -c '.versions')
+    echo "Supported versions: $VERSIONS"
+    echo -n "$VERSIONS" > $(step.results.versions.path)

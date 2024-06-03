@@ -58,6 +58,25 @@ spec:
             value: "$(steps.create-cluster.results.clusterName)"
           - name: credentialsVolume
             value: credentials
+      - name: copy-secrets
+        ref:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/amisstea/tekton-integration-tools.git
+            - name: revision
+              value: main
+            - name: pathInRepo
+              value: stepactions/copy-secrets-to-cluster.yaml
+        params:
+          - name: credentials
+            value: credentials
+          - name: kubeconfig
+            value: "$(steps.get-kubeconfig.results.kubeconfig)"
+          - name: labelSelector
+            value: my-selector=true
+          - name: namespace
+            value: default
       - name: verify
         image: quay.io/redhat-appstudio/appstudio-utils@sha256:586149e3f18d966f681d956ab074b4e1d8433663d615ed86e19a3804ba952dfe
         env:
@@ -69,6 +88,7 @@ spec:
         script: |
           #!/bin/bash
           set -exo pipefail
+          oc get --kubeconfig /credentials/$KUBECONFIG -n default secrets
           oc run --kubeconfig /credentials/$KUBECONFIG test-pod --image=nginx
           oc get --kubeconfig /credentials/$KUBECONFIG pods
           oc get --kubeconfig /credentials/$KUBECONFIG pods test-pod -o=jsonpath='{.metadata.namespace}'

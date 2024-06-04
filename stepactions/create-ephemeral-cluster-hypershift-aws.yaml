@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1alpha1
 kind: StepAction
 metadata:
-  name: create-cluster-hypershift-aws
+  name: create-ephemeral-cluster-hypershift-aws
 spec:
   image: registry.redhat.io/openshift4/ose-cli@sha256:15da03b04318bcc842060b71e9dd6d6c2595edb4e8fdd11b0c6781eeb03ca182
   params:
@@ -11,6 +11,17 @@ spec:
     - name: version
       type: string
       description: The version of OpenShift to install.
+    - name: kubeconfigSecretLabelSelector
+      type: string
+      default: toolchain.dev.openshift.com/spacerequest=eaas
+      description: |
+        A label selector used to identify the secret containing the hypershift hub cluster kubeconfig
+    - name: insecureSkipTLSVerify
+      type: string
+      default: "false"
+      description: >-
+        Skip TLS verification when accessing the EaaS hub cluster.
+        This should not be set to "true" in a production environment.
   results:
     - name: clusterName
       description: The name of the generated ClusterTemplateInstance resource 
@@ -19,6 +30,10 @@ spec:
       value: "$(params.instanceType)"
     - name: VERSION
       value: "$(params.version)"
+    - name: LABEL_SELECTOR
+      value: "$(params.kubeconfigSecretLabelSelector)"
+    - name: INSECURE_SKIP_TLS_VERIFY
+      value: "$(params.insecureSkipTLSVerify)"
   script: |
     #!/bin/bash
     set -eo pipefail
@@ -29,7 +44,7 @@ spec:
     metadata:
       generateName: cluster-
     spec:
-      clusterTemplateRef: hypershift-aws-template
+      clusterTemplateRef: hypershift-aws-cluster
       parameters:
         - name: instanceType
           value: $INSTANCE_TYPE
@@ -37,16 +52,22 @@ spec:
           value: $VERSION
     EOF
 
-    CTI_NAME=$(oc create -f cti.yaml -o=jsonpath='{.metadata.name}')
+    TMP_KUBECONFIG=$(mktemp)
+    trap 'rm "$TMP_KUBECONFIG"' EXIT
+
+    oc get secret -l $LABEL_SELECTOR -o jsonpath="{.items[0].data.kubeconfig}" | base64 -d > $TMP_KUBECONFIG
+    OC=(oc --insecure-skip-tls-verify=$INSECURE_SKIP_TLS_VERIFY --kubeconfig=$TMP_KUBECONFIG)
+
+    CTI_NAME=$(${OC[*]} create -f cti.yaml -o=jsonpath='{.metadata.name}')
     echo "Created ClusterTemplateInstance $CTI_NAME"
     echo -n $CTI_NAME > $(step.results.clusterName.path)
 
     echo "Waiting for ClusterTemplateInstance to be ready (20m timeout)"
-    if oc wait cti $CTI_NAME --for=jsonpath='{.status.phase}'=Ready --timeout=20m; then
+    if ${OC[*]} wait cti $CTI_NAME --for=jsonpath='{.status.phase}'=Ready --timeout=20m; then
       echo "Successfully provisioned $CTI_NAME"
       exit 0
     else
-      oc get cti $CTI_NAME -o yaml
+      ${OC[*]} get cti $CTI_NAME -o yaml
       echo "Failed to provision $CTI_NAME"
       exit 1
     fi

@@ -56,7 +56,7 @@ spec:
         params:
           - name: clusterName
             value: "$(steps.create-cluster.results.clusterName)"
-          - name: credentialsVolume
+          - name: credentials
             value: credentials
       - name: copy-secrets
         ref:
@@ -81,18 +81,18 @@ spec:
         image: quay.io/redhat-appstudio/appstudio-utils@sha256:586149e3f18d966f681d956ab074b4e1d8433663d615ed86e19a3804ba952dfe
         env:
           - name: KUBECONFIG
-            value: "$(steps.get-kubeconfig.results.kubeconfig)"
+            value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
         volumeMounts:
           - name: credentials
             mountPath: /credentials
         script: |
           #!/bin/bash
           set -exo pipefail
-          oc get --kubeconfig /credentials/$KUBECONFIG -n default secrets
-          oc run --kubeconfig /credentials/$KUBECONFIG test-pod --image=nginx
-          oc get --kubeconfig /credentials/$KUBECONFIG pods
-          oc get --kubeconfig /credentials/$KUBECONFIG pods test-pod -o=jsonpath='{.metadata.namespace}'
-          oc delete --kubeconfig /credentials/$KUBECONFIG pod test-pod
+          oc get -n default secrets
+          oc run test-pod --image=nginx
+          oc get pods
+          oc get pods test-pod -o=jsonpath='{.metadata.namespace}'
+          oc delete pod test-pod
     results:
       - name: clusterName
         value: "$(steps.create-cluster.results.clusterName)"

@@ -1,0 +1,9 @@
+apiVersion: tekton.dev/v1alpha1
+kind: StepAction
+metadata:
+  name: sample-stepaction
+spec:
+  image: quay.io/redhat-appstudio/appstudio-utils@sha256:586149e3f18d966f681d956ab074b4e1d8433663d615ed86e19a3804ba952dfe
+  script: |
+    #!/bin/bash
+    echo "Step actions are working!"

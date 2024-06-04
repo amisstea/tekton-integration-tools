@@ -1,0 +1,17 @@
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  name: verify-stepactions
+spec:
+  taskSpec:
+    steps:
+      - name: verify-stepactions
+        ref:
+          resolver: git
+          params:
+            - name: url
+              value: https://github.com/amisstea/tekton-integration-tools.git
+            - name: revision
+              value: sample-stepaction
+            - name: pathInRepo
+              value: stepactions/sample-stepaction.yaml
